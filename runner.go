@@ -1,4 +1,4 @@
-// Package runner is a simple dependency injection tool for go.
+// Package runner is a dependency management tool for go
 package runner
 
 import (

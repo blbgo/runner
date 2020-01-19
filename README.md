@@ -1,9 +1,9 @@
 # runner
 
-A dependency injection tool for go.
+A dependency management tool for go
 
 [![GoDoc](http://img.shields.io/badge/go-documentation-blue.svg)](http://godoc.org/github.com/blbgo/runner)
-[![Go Report Card](https://goreportcard.com/badge/github.com/blbgo/depend)](https://goreportcard.com/report/github.com/blbgo/runner)
+[![Go Report Card](https://goreportcard.com/badge/github.com/blbgo/runner)](https://goreportcard.com/report/github.com/blbgo/runner)
 [![License](http://img.shields.io/badge/license-mit-blue.svg)](https://github.com/blbgo/runner/blob/master/LICENSE.txt)
 
 ## Overview
