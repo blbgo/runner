@@ -33,7 +33,9 @@ type Runner interface {
 	// produced an error will be returned.
 	//
 	// Finally all produced values that implement io.Closer or general.DelayCloser will have the
-	// Close method of those interfaces called.
+	// Close method of those interfaces called. This will be done in the opposite order that the
+	// values were produced insuring that a values Close will be called before any of its
+	// dependencies.
 	//
 	// The error slice returned may have errors from the producer functions or an error from the
 	// Main.Run function.  In either case there my also be errors from the Close functions.
@@ -81,6 +83,7 @@ type runner struct {
 	provideSlice  map[reflect.Type]bool
 	producers     []reflect.Value
 	values        map[reflect.Type]reflect.Value
+	closers       []interface{}
 }
 
 // defaultCloseTimeout is the default timeout duration to wait for general.DelayCloser complete
@@ -155,6 +158,7 @@ func (r *runner) Run() []error {
 		return r.close(errs)
 	}
 
+	// get the Main interface
 	mainValue, ok := r.values[mainType]
 	if !ok {
 		errs = append(errs, ErrNoMain)
@@ -162,13 +166,21 @@ func (r *runner) Run() []error {
 	}
 	main, ok := mainValue.Interface().(Main)
 	if !ok {
-		errs = append(errs, errors.New("BUG Main interface found but can not type assert to Main"))
+		errs = append(
+			errs,
+			errors.New("BUG Main interface found but can not type assert to Main"),
+		)
 		return r.close(errs)
 	}
+
+	// values no longer needed, set to null to maybe free memory
+	r.values = nil
+
 	err := main.Run()
 	if err != nil {
 		errs = append(errs, err)
 	}
+
 	return r.close(errs)
 }
 
@@ -196,8 +208,10 @@ func (r *runner) build() []error {
 		errs = errs[:0]
 		waitingProducers, r.producers = r.producers[:0], waitingProducers
 	}
-	// nil out producers so memory can be garbage collected
+	// nil out producers, produceCounts, and provideSlice so memory can be garbage collected
 	r.producers = nil
+	r.produceCounts = nil
+	r.provideSlice = nil
 	return nil
 }
 
@@ -260,64 +274,55 @@ func (r *runner) resolveProvider(provider reflect.Value) error {
 		} else {
 			r.values[resultType] = result
 		}
-
+		r.saveIfCloser(result)
 	}
 	return nil
 }
 
-// Close closes any values in the runner that implement the io.Closer or general.DelayCloser
-// interfaces
-func (r *runner) close(errs []error) []error {
-	doneChan := make(chan error)
-	delayCount := 0
-	for i, v := range r.values {
-		switch i.Kind() {
-		case reflect.Interface:
-			delay, err := closeValue(v.Interface(), doneChan)
-			if err != nil {
-				errs = append(errs, err)
-			} else if delay {
-				delayCount++
-			}
-		case reflect.Slice:
-			for j := 0; j < v.Len(); j++ {
-				delay, err := closeValue(v.Index(j).Interface(), doneChan)
-				if err != nil {
-					errs = append(errs, err)
-				} else if delay {
-					delayCount++
-				}
-			}
-		}
+func (r *runner) saveIfCloser(value reflect.Value) {
+	valueInterface := value.Interface()
+	switch valueInterface.(type) {
+	case io.Closer:
+		r.closers = append(r.closers, valueInterface)
+	case general.DelayCloser:
+		r.closers = append(r.closers, valueInterface)
 	}
-	timer := time.NewTimer(r.closeTimeout)
-	for ; delayCount > 0; delayCount-- {
-		select {
-		case err, ok := <-doneChan:
-			if !ok {
-				errs = append(errs, errors.New("DelayCloser doneChan closed"))
-				break
-			}
-			if err != nil {
-				errs = append(errs, err)
-			}
-		case <-timer.C:
-			errs = append(errs, ErrDelayCloserTimeout)
-			break
-		}
-	}
-	return errs
 }
 
-func closeValue(value interface{}, doneChan chan error) (bool, error) {
-	closer, ok := value.(io.Closer)
-	if ok {
-		return false, closer.Close()
+// Close closes any values in the runner that implement the io.Closer or general.DelayCloser
+// interfaces.  They are closed in reverse creation order.  This will insure a values close will
+// be called before any of its dependencies.
+func (r *runner) close(errs []error) []error {
+	doneChan := make(chan error)
+	timer := time.NewTimer(r.closeTimeout)
+	for i := len(r.closers)-1; i >= 0; i-- {
+		closer, ok := r.closers[i].(io.Closer)
+		if ok {
+			err := closer.Close()
+			if err != nil {
+				errs = append(errs, err)
+			}
+			continue
+		}
+		delayCloser, ok := r.closers[i].(general.DelayCloser)
+		if ok {
+			delayCloser.Close(doneChan)
+			select {
+			case err, ok := <-doneChan:
+				if !ok {
+					errs = append(errs, errors.New("BUG runner DelayCloser doneChan closed"))
+					break
+				}
+				if err != nil {
+					errs = append(errs, err)
+				}
+			case <-timer.C:
+				errs = append(errs, ErrDelayCloserTimeout)
+				break
+			}
+			continue
+		}
+		errs = append(errs, errors.New("BUG runner has non closer in closers"))
 	}
-	delayCloser, ok := value.(general.DelayCloser)
-	if ok {
-		delayCloser.Close(doneChan)
-		return true, nil
-	}
-	return false, nil
+	return errs
 }

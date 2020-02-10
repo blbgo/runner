@@ -13,7 +13,7 @@ Create a Runner, *Add* dependency and subsystem producing functions, call *Run* 
 ## Install
 
 ```shell
-go get github.com/blbergwall/runner
+go get github.com/blbgo/runner
 ```
 
 ## Usage
@@ -21,7 +21,7 @@ go get github.com/blbergwall/runner
 Import the runner package
 
 ```go
-import "github.com/blbergwall/runner"
+import "github.com/blbgo/runner"
 ```
 
 Create a new Runner
@@ -82,4 +82,4 @@ Close method called.
 
 ## License
 
-[MIT](https://github.com/blbergwall/depend/blob/master/LICENSE.txt)
+[MIT](https://github.com/blbgo/runner/blob/master/LICENSE.txt)

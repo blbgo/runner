@@ -138,11 +138,12 @@ func TestMainRun(t *testing.T) {
 
 	b := New()
 	a.NoError(b.Add(new1ConsumeSice2))
+	a.NoError(b.Add(new2))
 	a.NoError(b.Add(new2Closer))
 	a.NoError(b.Add(new2DelayCloser))
 	a.NoError(b.Add(newMain))
 	errs := b.Run()
 	a.Equal(2, len(errs))
-	a.True(errors.Is(errs[0], errCloser), "Expecting", errCloser, "got", errs[0])
-	a.True(errors.Is(errs[1], errDelayCloser), "Expecting", errDelayCloser, "got", errs[1])
+	a.True(errors.Is(errs[0], errDelayCloser), "Expecting", errDelayCloser, "got", errs[0])
+	a.True(errors.Is(errs[1], errCloser), "Expecting", errCloser, "got", errs[1])
 }
