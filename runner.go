@@ -295,7 +295,7 @@ func (r *runner) saveIfCloser(value reflect.Value) {
 func (r *runner) close(errs []error) []error {
 	doneChan := make(chan error)
 	timer := time.NewTimer(r.closeTimeout)
-	for i := len(r.closers)-1; i >= 0; i-- {
+	for i := len(r.closers) - 1; i >= 0; i-- {
 		closer, ok := r.closers[i].(io.Closer)
 		if ok {
 			err := closer.Close()
