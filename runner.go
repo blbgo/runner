@@ -220,21 +220,11 @@ func (r *runner) resolveProvider(provider reflect.Value) error {
 	providerType := provider.Type()
 	in := make([]reflect.Value, providerType.NumIn())
 	for i := 0; i < len(in); i++ {
-		paramType := providerType.In(i)
-		if paramType.Kind() == reflect.Slice {
-			if r.produceCounts[paramType.Elem()] > 0 {
-				return fmt.Errorf("%w type: %v", ErrMissingDependency, paramType)
-			}
-		} else if r.produceCounts[paramType] > 0 {
-			return fmt.Errorf("%w type: %v", ErrMissingDependency, paramType)
+		param, err := r.findParam(providerType.In(i))
+		if err != nil {
+			return err
 		}
-
-		anIn, ok := r.values[paramType]
-		if !ok {
-			// bad will be no way to resolve this type ever
-			return fmt.Errorf("%w type: %v", ErrNoProducerMakes, paramType)
-		}
-		in[i] = anIn
+		in[i] = param
 	}
 	results := provider.Call(in)
 	resultsCount := len(results)
@@ -250,32 +240,57 @@ func (r *runner) resolveProvider(provider reflect.Value) error {
 		if result.IsNil() {
 			return fmt.Errorf("%w type: %v", ErrProducerReturnedNil, providerType.Out(i))
 		}
-		resultType := result.Type()
-		waitForCount := r.produceCounts[resultType]
-		if waitForCount <= 0 {
-			return fmt.Errorf("BUG not waiting for produced type: %v", resultType)
+		err := r.handleProvidedValue(result)
+		if err != nil {
+			return err
 		}
-		// nothing wants a slice but a slice is what there will be
-		if waitForCount > 1 && !r.provideSlice[resultType] {
-			r.provideSlice[resultType] = true
-		}
-		r.produceCounts[resultType] = waitForCount - 1
-		if r.provideSlice[resultType] {
-			resultType = reflect.SliceOf(resultType)
-			aValue, ok := r.values[resultType]
-			if ok {
-				r.values[resultType] = reflect.Append(aValue, result)
-			} else {
-				r.values[resultType] = reflect.Append(
-					reflect.MakeSlice(resultType, 0, waitForCount),
-					result,
-				)
-			}
-		} else {
-			r.values[resultType] = result
-		}
-		r.saveIfCloser(result)
 	}
+	return nil
+}
+
+func (r *runner) findParam(paramType reflect.Type) (reflect.Value, error) {
+	if paramType.Kind() == reflect.Slice {
+		if r.produceCounts[paramType.Elem()] > 0 {
+			return nilValue, fmt.Errorf("%w type: %v", ErrMissingDependency, paramType)
+		}
+	} else if r.produceCounts[paramType] > 0 {
+		return nilValue, fmt.Errorf("%w type: %v", ErrMissingDependency, paramType)
+	}
+
+	param, ok := r.values[paramType]
+	if !ok {
+		// bad will be no way to resolve this type ever
+		return nilValue, fmt.Errorf("%w type: %v", ErrNoProducerMakes, paramType)
+	}
+	return param, nil
+}
+
+func (r *runner) handleProvidedValue(value reflect.Value) error {
+	valueType := value.Type()
+	waitForCount := r.produceCounts[valueType]
+	if waitForCount <= 0 {
+		return fmt.Errorf("BUG not waiting for produced type: %v", valueType)
+	}
+	// nothing wants a slice but a slice is what there will be
+	if waitForCount > 1 && !r.provideSlice[valueType] {
+		r.provideSlice[valueType] = true
+	}
+	r.produceCounts[valueType] = waitForCount - 1
+	r.saveIfCloser(value)
+	if !r.provideSlice[valueType] {
+		r.values[valueType] = value
+		return nil
+	}
+	valueType = reflect.SliceOf(valueType)
+	aValue, ok := r.values[valueType]
+	if ok {
+		r.values[valueType] = reflect.Append(aValue, value)
+		return nil
+	}
+	r.values[valueType] = reflect.Append(
+		reflect.MakeSlice(valueType, 0, waitForCount),
+		value,
+	)
 	return nil
 }
 
@@ -310,15 +325,13 @@ func (r *runner) close(errs []error) []error {
 			select {
 			case err, ok := <-doneChan:
 				if !ok {
-					errs = append(errs, errors.New("BUG runner DelayCloser doneChan closed"))
-					break
+					return append(errs, errors.New("BUG runner DelayCloser doneChan closed"))
 				}
 				if err != nil {
 					errs = append(errs, err)
 				}
 			case <-timer.C:
-				errs = append(errs, ErrDelayCloserTimeout)
-				break
+				return append(errs, ErrDelayCloserTimeout)
 			}
 			continue
 		}
