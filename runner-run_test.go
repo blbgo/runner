@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/blbergwall/assert"
+	"github.com/blbgo/testing/assert"
 )
 
 //********************

@@ -105,6 +105,22 @@ func New() Runner {
 	}
 }
 
+// RunStack creates a runner, adds all producers, and then runs it.
+// If adding a producer returns an error it will be returned
+// Otherwise the result of Run will be returned
+func RunStack(producers []interface{}) []error {
+	runner := New()
+
+	for _, v := range producers {
+		err := runner.Add(v)
+		if err != nil {
+			return []error{err}
+		}
+	}
+
+	return runner.Run()
+}
+
 func (r *runner) SetCloseTimeout(closeTimeout time.Duration) {
 	r.closeTimeout = closeTimeout
 }
@@ -311,17 +327,14 @@ func (r *runner) close(errs []error) []error {
 	doneChan := make(chan error)
 	timer := time.NewTimer(r.closeTimeout)
 	for i := len(r.closers) - 1; i >= 0; i-- {
-		closer, ok := r.closers[i].(io.Closer)
-		if ok {
-			err := closer.Close()
+		switch v := r.closers[i].(type) {
+		case io.Closer:
+			err := v.Close()
 			if err != nil {
 				errs = append(errs, err)
 			}
-			continue
-		}
-		delayCloser, ok := r.closers[i].(general.DelayCloser)
-		if ok {
-			delayCloser.Close(doneChan)
+		case general.DelayCloser:
+			v.Close(doneChan)
 			select {
 			case err, ok := <-doneChan:
 				if !ok {
@@ -333,9 +346,9 @@ func (r *runner) close(errs []error) []error {
 			case <-timer.C:
 				return append(errs, ErrDelayCloserTimeout)
 			}
-			continue
+		default:
+			errs = append(errs, errors.New("BUG runner has non closer in closers"))
 		}
-		errs = append(errs, errors.New("BUG runner has non closer in closers"))
 	}
 	return errs
 }
