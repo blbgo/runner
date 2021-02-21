@@ -5,19 +5,10 @@ import (
 	"errors"
 )
 
-// Main is an interface that must be provided by one of the items added with Runner.Add for the
-// Runner.Run method to work.
+// Main is an interface that must be provided by one (and only one) producer passed to Run.
 type Main interface {
 	Run() error
 }
-
-// Options is an interface that MAY be provided by one of the producer functions to overide
-// defaults
-//type Options interface {
-//	// CloseTimeout should return the deration to wait for all general.DelayCloser results to be
-//	// reported.  The default is 20 seconds if Options is ont provided.
-//	CloseTimeout() time.Duration
-//}
 
 // ErrProducerNil indicates nil was passed to Add
 var ErrProducerNil = errors.New("producer nil")

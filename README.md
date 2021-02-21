@@ -49,7 +49,7 @@ This system can be run with
 ```go
 errs := runner.Run([]interface{}{newTestInterface, newMain})
 for _, err := range errs {
-	fmt.Println(err)
+    fmt.Println(err)
 }
 ```
 

@@ -52,6 +52,7 @@ type testStruct1 struct{}
 func (r testStruct1) Method() string { return "testStruct1.Method" }
 
 func nonInterfaceIn(int) testInterface1 { return testStruct1{} }
+
 func TestErrProducerInvalidInputs(t *testing.T) {
 	a := assert.New(t)
 
@@ -177,4 +178,11 @@ func TestMainRun(t *testing.T) {
 	a.Equal(2, len(errs))
 	a.True(errors.Is(errs[0], errDelayCloser), "Expecting", errDelayCloser, "got", errs[0])
 	a.True(errors.Is(errs[1], errCloser), "Expecting", errCloser, "got", errs[1])
+}
+
+func TestNeedSliceWhenNoneNOTError(t *testing.T) {
+	a := assert.New(t)
+
+	errs := Run([]interface{}{new1ConsumeSice2, newMain})
+	a.Equal(0, len(errs))
 }

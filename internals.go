@@ -25,7 +25,7 @@ type runner struct {
 const defaultCloseTimeout = 20 * time.Second
 
 var nilValue = reflect.ValueOf(nil)
-var valueType = reflect.TypeOf((*reflect.Value)(nil)).Elem()
+var xvalueType = reflect.TypeOf((*reflect.Value)(nil)).Elem()
 var errorType = reflect.TypeOf((*error)(nil)).Elem()
 var mainType = reflect.TypeOf((*Main)(nil)).Elem()
 
@@ -179,7 +179,8 @@ func (r *runner) resolveProvider(provider reflect.Value) error {
 }
 
 func (r *runner) findParam(paramType reflect.Type) (reflect.Value, error) {
-	if paramType.Kind() == reflect.Slice {
+	kind := paramType.Kind()
+	if kind == reflect.Slice {
 		if r.produceCounts[paramType.Elem()] > 0 {
 			return nilValue, fmt.Errorf("%w type: %v", ErrMissingDependency, paramType)
 		}
@@ -189,36 +190,41 @@ func (r *runner) findParam(paramType reflect.Type) (reflect.Value, error) {
 
 	param, ok := r.values[paramType]
 	if !ok {
-		// bad will be no way to resolve this type ever
-		return nilValue, fmt.Errorf("%w type: %v", ErrNoProducerMakes, paramType)
+		if kind != reflect.Slice {
+			// bad will be no way to resolve this type ever
+			return nilValue, fmt.Errorf("%w type: %v", ErrNoProducerMakes, paramType)
+		}
+		// need a slice of something that will not be produced, seems like providing an empty slice
+		// would be the correct behavior instead of an error
+		return reflect.MakeSlice(paramType, 0, 0), nil
 	}
 	return param, nil
 }
 
 func (r *runner) handleProvidedValue(value reflect.Value) error {
-	valueType := value.Type()
-	waitForCount := r.produceCounts[valueType]
+	providedValueType := value.Type()
+	waitForCount := r.produceCounts[providedValueType]
 	if waitForCount <= 0 {
-		return fmt.Errorf("BUG not waiting for produced type: %v", valueType)
+		return fmt.Errorf("BUG not waiting for produced type: %v", providedValueType)
 	}
 	// nothing wants a slice but a slice is what there will be
-	if waitForCount > 1 && !r.provideSlice[valueType] {
-		r.provideSlice[valueType] = true
+	if waitForCount > 1 && !r.provideSlice[providedValueType] {
+		r.provideSlice[providedValueType] = true
 	}
-	r.produceCounts[valueType] = waitForCount - 1
+	r.produceCounts[providedValueType] = waitForCount - 1
 	r.saveIfCloser(value)
-	if !r.provideSlice[valueType] {
-		r.values[valueType] = value
+	if !r.provideSlice[providedValueType] {
+		r.values[providedValueType] = value
 		return nil
 	}
-	valueType = reflect.SliceOf(valueType)
-	aValue, ok := r.values[valueType]
+	providedSliceType := reflect.SliceOf(providedValueType)
+	aValue, ok := r.values[providedSliceType]
 	if ok {
-		r.values[valueType] = reflect.Append(aValue, value)
+		r.values[providedSliceType] = reflect.Append(aValue, value)
 		return nil
 	}
-	r.values[valueType] = reflect.Append(
-		reflect.MakeSlice(valueType, 0, waitForCount),
+	r.values[providedSliceType] = reflect.Append(
+		reflect.MakeSlice(providedSliceType, 0, waitForCount),
 		value,
 	)
 	return nil
